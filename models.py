@@ -71,6 +71,8 @@ class RNNModel(ModelBuilder):
     rnn_activation: str
     rnn_bn: bool
     rnn_dropout_rate: Optional[float]
+    rnn_do_bn_order: bool
+    rnn_activation_before_bn_do: bool
     time_distributed_dense: bool
     activation: str
     activation_before_bn_do: bool
@@ -78,10 +80,12 @@ class RNNModel(ModelBuilder):
     name_suffix: Optional[str]
 
     def __init__(self, cnn_config: CNNConfig = None, bd_merge: BidirectionalMerge = BidirectionalMerge.concat,
-                 rnn_type: RNNType = RNNType.LSTM, rnn_units: int = 200, rnn_layers: int = 1, rnn_dense: bool = False,
+                 rnn_type: RNNType = RNNType.GRU, rnn_units: int = 200, rnn_layers: int = 1, rnn_dense: bool = False,
                  rnn_activation: str = None,
                  rnn_bn: bool = True,
                  rnn_dropout_rate: float = None,
+                 rnn_activation_before_bn_do: bool = False,
+                 rnn_do_bn_order: bool = False,
                  activation_before_bn_do: bool = True,
                  do_bn_order: bool = False,
                  time_distributed_dense: bool = True,
@@ -96,7 +100,9 @@ class RNNModel(ModelBuilder):
         self.rnn_units = rnn_units
         self.rnn_activation = rnn_activation if rnn_activation else activation
         self.rnn_bn = rnn_bn
-        self.rnn_dropout_rate = rnn_dropout_rate if rnn_dropout_rate else dropout_rate
+        self.rnn_dropout_rate = rnn_dropout_rate if rnn_dropout_rate is not None else dropout_rate
+        self.rnn_do_bn_order = rnn_do_bn_order
+        self.rnn_activation_before_bn_do = rnn_activation_before_bn_do
         self.time_distributed_dense = time_distributed_dense
         self.activation = activation
         self.do_bn_order = do_bn_order
@@ -137,9 +143,12 @@ class RNNModel(ModelBuilder):
 
                 x = conv(z)
 
+                if self.cnn_config.cnn_dropout_rate is None:
+                    self.cnn_config.cnn_dropout_rate = self.dropout_rate
+
                 if self.cnn_config.cnn_do_bn_order:
                     if self.cnn_config.cnn_dropout_rate > 0.01:
-                        x = Dropout(rate=self.dropout_rate)(x)
+                        x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
                     if not self.cnn_config.cnn_activation_before_bn_do:
                         x = Activation(self.cnn_config.cnn_activation, name=self.activation + "C" + str(layer_i))(x)
                     if self.cnn_config.cnn_bn:
@@ -150,7 +159,7 @@ class RNNModel(ModelBuilder):
                     if not self.cnn_config.cnn_activation_before_bn_do:
                         x = Activation(self.cnn_config.cnn_activation, name=self.activation + "C" + str(layer_i))(x)
                     if self.cnn_config.cnn_dropout_rate > 0.01:
-                        x = Dropout(rate=self.dropout_rate)(x)
+                        x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
 
                 if self.cnn_config.dilation < -1:
                     dil = dil // (-self.cnn_config.dilation)
