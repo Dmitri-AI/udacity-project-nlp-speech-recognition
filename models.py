@@ -76,7 +76,9 @@ class RNNModel(ModelBuilder):
     time_distributed_dense: bool
     activation: str
     activation_before_bn_do: bool
+    dropout_rate: float
     do_bn_order: bool
+    bn: bool
     name_suffix: Optional[str]
 
     def __init__(self, cnn_config: CNNConfig = None, bd_merge: BidirectionalMerge = BidirectionalMerge.concat,
@@ -86,11 +88,12 @@ class RNNModel(ModelBuilder):
                  rnn_dropout_rate: float = None,
                  rnn_activation_before_bn_do: bool = False,
                  rnn_do_bn_order: bool = False,
-                 activation_before_bn_do: bool = True,
+                 activation_before_bn_do: bool = False,
                  do_bn_order: bool = False,
                  time_distributed_dense: bool = True,
                  activation: str = "relu",
                  dropout_rate: float = 0.2,
+                 bn: bool = True,
                  name_suffix: str = None) -> None:
         self.cnn_config = cnn_config
         self.rnn_type = rnn_type
@@ -107,6 +110,7 @@ class RNNModel(ModelBuilder):
         self.activation = activation
         self.do_bn_order = do_bn_order
         self.activation_before_bn_do = activation_before_bn_do
+        self.bn = bn
         self.dropout_rate = dropout_rate
         self.name_suffix = name_suffix
         if self.cnn_config:
@@ -192,9 +196,11 @@ class RNNModel(ModelBuilder):
                     x = Dropout(rate=self.dropout_rate)(x)
                 if not self.activation_before_bn_do:
                     x = Activation(self.activation, name=self.activation)(x)
-                x = BatchNormalization()(x)
+                if self.bn:
+                    x = BatchNormalization()(x)
             else:
-                x = BatchNormalization()(x)
+                if self.bn:
+                    x = BatchNormalization()(x)
                 if not self.activation_before_bn_do:
                     x = Activation(self.activation, name=self.activation)(x)
                 if self.dropout_rate > 0.01:
@@ -284,9 +290,11 @@ class RNNModel(ModelBuilder):
                     name += " DO(", self.dropout_rate, ")"
                 if not self.activation_before_bn_do:
                     name += " ", self.activation
-                name += " BN"
+                if self.bn:
+                    name += " BN"
             else:
-                name += " BN"
+                if self.bn:
+                    name += " BN"
                 if not self.activation_before_bn_do:
                     name += " ", self.activation
                 if self.dropout_rate > 0.01:
