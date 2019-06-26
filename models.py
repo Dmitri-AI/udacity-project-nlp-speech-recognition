@@ -168,9 +168,9 @@ class RNNModel(ModelBuilder):
                             print(layer_i, x.shape, z.shape)
                             if layer_i % (self.cnn_config.cnn_layers // 5) == 0 and layer_i > 1:
                             # if layer_i > 1:
-                                z = concatenate([z, x], axis=-2)
-                            else:
                                 z = x
+                            else:
+                                z = concatenate([z, x], axis=-1)
                         else:
                             z = concatenate([z, x], axis=-1)
                     x = conv(z)
@@ -208,16 +208,19 @@ class RNNModel(ModelBuilder):
                         dil = dil // (-self.cnn_config.dilation)
                     if self.cnn_config.dilation > 1:
                         dil *= self.cnn_config.dilation
-                if self.cnn_config.kernel_2d is not None and (layer_i+1) % (self.cnn_config.cnn_layers // 5) == 0:
+                if self.cnn_config.kernel_2d is not None:
+                # if self.cnn_config.kernel_2d is not None and (layer_i+1) % (self.cnn_config.cnn_layers // 5) == 0:
                     if self.cnn_config.cnn_bn:
                         x = BatchNormalization()(x)
                     # if not self.cnn_config.cnn_activation_before_bn_do:
                     x = Activation(self.cnn_config.cnn_activation, name=self.activation + "C" + str(layer_i))(x)
-                    if self.cnn_config.cnn_dense:
-                        pool = MaxPooling2D(pool_size=(1, 4))
-                    else:
+                    if not self.cnn_config.cnn_dense:
                         pool = MaxPooling2D(pool_size=(1, 2))
-                    x = pool(x)
+                        x = pool(x)
+                    elif (layer_i+1) % (self.cnn_config.cnn_layers // 5) == 0:
+                    # elif layer_i == self.cnn_config.cnn_layers - 1:
+                        pool = MaxPooling2D(pool_size=(1, 2))
+                        x = pool(x)
                     if self.cnn_config.cnn_dropout_rate > 0.01:
                         x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
 
