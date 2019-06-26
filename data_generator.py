@@ -20,7 +20,8 @@ RNG_SEED = 123
 class AudioGenerator:
     def __init__(self, step=10, window=20, max_freq=8000, mfcc_dim=13,
                  # desc_file=None,
-                 minibatch_size=20, spectrogram=True, max_duration=10.0,
+                 minibatch_size=20, spectrogram=True, raw=False, max_duration=10.0,
+                 max_length=None,
                  sort_by_duration=False):
         """
         Params:
@@ -50,8 +51,10 @@ class AudioGenerator:
         self.max_duration = max_duration
         self.minibatch_size = minibatch_size
         self.spectrogram = spectrogram
+        self.raw = raw
+        self.max_length = max_length
         self.sort_by_duration = sort_by_duration
-        self.input_dim = 161 if spectrogram else mfcc_dim
+        self.input_dim = 1 if raw else (161 if spectrogram else mfcc_dim)
 
     def get_batch(self, partition):
         """ Obtain a batch of train, validation, or test data
@@ -74,16 +77,20 @@ class AudioGenerator:
 
         features = [self.normalize(self.featurize(a)) for a in
                     audio_paths[cur_index:cur_index + self.minibatch_size]]
+        # print(features[0].shape)
 
         # calculate necessary sizes
-        max_length = max([features[i].shape[0]
-                          for i in range(0, self.minibatch_size)])
+        if self.max_length is not None:
+            m_length = self.max_length
+        else:
+            m_length = max([features[i].shape[0] for i in range(0, self.minibatch_size)])
         max_string_length = max([len(texts[cur_index + i])
                                  for i in range(0, self.minibatch_size)])
 
         # initialize the arrays
-        X_data = np.zeros([self.minibatch_size, max_length,
-                           self.feat_dim * self.spectrogram + self.mfcc_dim * (not self.spectrogram)])
+        X_data = np.zeros([self.minibatch_size, m_length,
+                           1 if self.raw else (self.feat_dim * self.spectrogram + self.mfcc_dim * (not self.spectrogram))])
+        # print(X_data.shape)
         labels = np.ones([self.minibatch_size, max_string_length]) * 28
         input_length = np.zeros([self.minibatch_size, 1])
         label_length = np.zeros([self.minibatch_size, 1])
@@ -91,7 +98,12 @@ class AudioGenerator:
         for i in range(0, self.minibatch_size):
             # calculate X_data & input_length
             feat = features[i]
+            if self.max_length is not None:
+                # print("feat.shape", feat.shape)
+                feat = feat[:self.max_length]
+                # print("feat.shape", feat.shape)
             input_length[i] = feat.shape[0]
+            # print("input_length[i]", input_length[i])
             X_data[i, :feat.shape[0], :] = feat
 
             # calculate labels & label_length
@@ -228,6 +240,8 @@ class AudioGenerator:
         k_samples = min(k_samples, len(self.train_audio_paths))
         samples = self.rng.sample(self.train_audio_paths, k_samples)
         feats = [self.featurize(s) for s in samples]
+        # for f in feats:
+        #     print(f.shape)
         feats = np.vstack(feats)
         self.feats_mean = np.mean(feats, axis=0)
         self.feats_std = np.std(feats, axis=0)
@@ -237,12 +251,16 @@ class AudioGenerator:
         Params:
             audio_clip (str): Path to the audio clip
         """
-        if self.spectrogram:
+        # print("featurize, self.raw = ", self.raw)
+        if self.spectrogram and not self.raw:
             return spectrogram_from_file(
                 audio_clip, step=self.step, window=self.window,
                 max_freq=self.max_freq)
         else:
             (rate, sig) = wav.read(audio_clip)
+            if self.raw:
+                # print("featurize, sig.shape = ", sig.shape)
+                return sig.reshape(-1, 1)
             return mfcc(sig, rate, numcep=self.mfcc_dim)
 
     def normalize(self, feature, eps=1e-14):
@@ -256,11 +274,13 @@ class AudioGenerator:
 class AudioGeneratorCached(AudioGenerator):
 
     def __init__(self, step=10, window=20, max_freq=8000, mfcc_dim=26, minibatch_size=20, # desc_file=None,
-                 spectrogram=True,
-                 max_duration=10.0, sort_by_duration=True):
+                 spectrogram=True, raw=False,
+                 max_duration=10.0,
+                 max_length=None,
+                 sort_by_duration=True):
         super().__init__(step, window, max_freq, mfcc_dim, minibatch_size, # desc_file,
-                         spectrogram,
-                         max_duration, sort_by_duration)
+                         spectrogram, raw,
+                         max_duration, max_length, sort_by_duration)
         self.file_to_feature = dict()
 
     def featurize(self, audio_clip):

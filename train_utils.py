@@ -162,7 +162,10 @@ def train_model(audio_gen: AudioGenerator,
                 loss_limit=400):
     # create a class instance for obtaining batches of data
     input_dim = audio_gen.input_dim
-    model = model_builder.model(input_dim=input_dim, output_dim=29)
+    if audio_gen.max_length is None:
+        model = model_builder.model(input_shape=(None, input_dim), output_dim=29)
+    else:
+        model = model_builder.model(input_shape=(audio_gen.max_length, input_dim), output_dim=29)
     model_name = ("Spec" if audio_gen.spectrogram else "MFCC") + " " + model.name
     model.name = model_name
     save_model_path = model.name + ".h5"
@@ -195,7 +198,8 @@ def train_model(audio_gen: AudioGenerator,
         callbacks = [model_checkpoint, terminate_on_na_n]
     else:
         metrics_logger = MetricsLogger(model_name=model_name, n_epochs=epochs, loss_limit=loss_limit)
-        callbacks = [model_checkpoint, metrics_logger, terminate_on_na_n]
+        callbacks = [model_checkpoint, metrics_logger]
+        # callbacks = [model_checkpoint, metrics_logger, terminate_on_na_n]
 
     try:
         # hist = \

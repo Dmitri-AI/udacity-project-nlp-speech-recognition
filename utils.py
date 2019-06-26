@@ -7,12 +7,15 @@ from numpy.lib.stride_tricks import as_strided
 from char_map import char_map, index_map
 
 
-def config_GPU(gpu_memory_fraction=0.45):
+def config_GPU(gpu_memory_fraction=0.45, allow_growth=False):
     from keras.backend.tensorflow_backend import set_session
     import tensorflow as tf
 
     config = tf.ConfigProto()
-    config.gpu_options.per_process_gpu_memory_fraction = gpu_memory_fraction
+    if allow_growth:
+        config.gpu_options.allow_growth = True
+    else:
+        config.gpu_options.per_process_gpu_memory_fraction = gpu_memory_fraction
     set_session(tf.Session(config=config))
 
     from tensorflow.python.client import device_lib

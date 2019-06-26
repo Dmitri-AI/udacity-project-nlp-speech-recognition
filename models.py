@@ -1,11 +1,13 @@
 from enum import Enum
 from abc import abstractmethod
 from typing import Optional
+from keras import backend as K
 
-from keras.layers import (BatchNormalization, Conv1D, Dense, Input,
+from keras.layers import (BatchNormalization, Conv1D, Conv2D, Dense, Input,
                           TimeDistributed, Activation, Bidirectional,
                           SimpleRNN,  # GRU, LSTM,
-                          CuDNNGRU, CuDNNLSTM, Dropout, concatenate, MaxPooling1D, AveragePooling1D)
+                          CuDNNGRU, CuDNNLSTM, Dropout, concatenate,
+                          MaxPooling1D, MaxPooling2D, AveragePooling1D, AveragePooling2D, Reshape)
 from keras.models import Model
 
 
@@ -29,7 +31,10 @@ class CNNConfig:
     cnn_bn: bool
     cnn_dense: bool
 
-    def __init__(self, filters=200, kernel_size=11, conv_stride=2, conv_border_mode='valid', dilation: int = 1,
+    def __init__(self, filters=200,
+                 kernel_size=11, conv_stride=2,
+                 kernel_2d=None, conv_stride_2d=None,
+                 conv_border_mode='valid', dilation: int = 1,
                  cnn_layers: int = 1, cnn_activation="relu", cnn_activation_before_bn_do: bool = True,
                  cnn_dropout_rate: float = None,
                  cnn_bn: bool = True, cnn_do_bn_order: bool = True, cnn_dense: bool = False):
@@ -37,6 +42,8 @@ class CNNConfig:
         self.filters = filters
         self.kernel_size = kernel_size
         self.conv_stride = conv_stride
+        self.kernel_2d = kernel_2d
+        self.conv_stride_2d = conv_stride_2d
         self.conv_border_mode = conv_border_mode
         self.dilation = dilation
         self.cnn_activation = cnn_activation
@@ -117,13 +124,20 @@ class RNNModel(ModelBuilder):
             if self.cnn_config.cnn_dropout_rate is None:
                 self.cnn_config.cnn_dropout_rate = self.dropout_rate
 
-    def model(self, input_dim: int, output_dim: int):
+    def model(self, input_shape, output_dim: int):
         """ Build a recurrent network for speech
         """
         # Main acoustic input
-        input_data = Input(name='the_input', shape=(None, input_dim))
-        # Add recurrent layer
+
+        input_data = Input(name='the_input', shape=input_shape)
+        # print("input shape", input_shape)
         x = input_data
+
+        if self.cnn_config.kernel_2d is not None:
+            reshape_up = Reshape((*input_shape, 1))
+            x = reshape_up(x)
+            # x = K.expand_dims(input_data, -1)
+
         z = None
         if self.cnn_config:
             dil = 1
@@ -134,49 +148,85 @@ class RNNModel(ModelBuilder):
                 in_layer_activation = self.cnn_config.cnn_activation
                 if not self.cnn_config.cnn_activation_before_bn_do or self.cnn_config.cnn_dense:
                     in_layer_activation = None
-                conv = Conv1D(self.cnn_config.filters, self.cnn_config.kernel_size,
-                              strides=self.cnn_config.conv_stride,
-                              padding=self.cnn_config.conv_border_mode,
-                              dilation_rate=dil,
-                              activation=in_layer_activation,
-                              name='conv1d' + str(layer_i + 1))
+                if self.cnn_config.kernel_2d is not None:
+                    conv = Conv2D(self.cnn_config.filters, self.cnn_config.kernel_2d, strides=self.cnn_config.conv_stride_2d,
+                                  padding="same",
+                                  # padding=self.cnn_config.conv_border_mode, #use_bias=False, kernel_initializer="zeros",
+                                  activation=in_layer_activation)
+                else:
+                    conv = Conv1D(self.cnn_config.filters, self.cnn_config.kernel_size,
+                                  strides=self.cnn_config.conv_stride,
+                                  padding=self.cnn_config.conv_border_mode,
+                                  dilation_rate=dil,
+                                  activation=in_layer_activation,
+                                  name='conv1d' + str(layer_i + 1))
                 if self.cnn_config.cnn_dense:
                     if layer_i == 0:
                         z = x
                     else:
-                        z = concatenate([z, x], axis=-1)
+                        if self.cnn_config.kernel_2d is not None:
+                            print(layer_i, x.shape, z.shape)
+                            if layer_i % (self.cnn_config.cnn_layers // 5) == 0 and layer_i > 1:
+                            # if layer_i > 1:
+                                z = concatenate([z, x], axis=-2)
+                            else:
+                                z = x
+                        else:
+                            z = concatenate([z, x], axis=-1)
                     x = conv(z)
-                    if layer_i < self.cnn_config.cnn_layers - 1 or self.rnn_layers > 0:
+                    if (layer_i < self.cnn_config.cnn_layers - 1 or self.rnn_layers > 0) and self.cnn_config.kernel_2d is None:
                         if self.cnn_config.cnn_bn:
                             x = BatchNormalization()(x)
+                        if not self.cnn_config.cnn_activation_before_bn_do:
                             x = Activation(self.cnn_config.cnn_activation, name=self.activation + "C" + str(layer_i))(x)
                         if self.cnn_config.cnn_dropout_rate > 0.01:
                             x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
                 else:
+                    print("Before x = conv(x)", x.shape)
                     x = conv(x)
+                    print("After x = conv(x)", x.shape)
+                    if (layer_i < self.cnn_config.cnn_layers - 1 or self.rnn_layers > 0) and self.cnn_config.kernel_2d is None:
+                        if self.cnn_config.cnn_dropout_rate is None:
+                            self.cnn_config.cnn_dropout_rate = self.dropout_rate
 
-                    if self.cnn_config.cnn_dropout_rate is None:
-                        self.cnn_config.cnn_dropout_rate = self.dropout_rate
-
-                    if self.cnn_config.cnn_do_bn_order:
-                        if self.cnn_config.cnn_dropout_rate > 0.01:
-                            x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
-                        if not self.cnn_config.cnn_activation_before_bn_do:
-                            x = Activation(self.cnn_config.cnn_activation, name=self.activation + "C" + str(layer_i))(x)
-                        if self.cnn_config.cnn_bn:
-                            x = BatchNormalization()(x)
-                    else:
-                        if self.cnn_config.cnn_bn:
-                            x = BatchNormalization()(x)
-                        if not self.cnn_config.cnn_activation_before_bn_do:
-                            x = Activation(self.cnn_config.cnn_activation, name=self.activation + "C" + str(layer_i))(x)
-                        if self.cnn_config.cnn_dropout_rate > 0.01:
-                            x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
+                        if self.cnn_config.cnn_do_bn_order:
+                            if self.cnn_config.cnn_dropout_rate > 0.01:
+                                x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
+                            if not self.cnn_config.cnn_activation_before_bn_do:
+                                x = Activation(self.cnn_config.cnn_activation, name=self.activation + "C" + str(layer_i))(x)
+                            if self.cnn_config.cnn_bn:
+                                x = BatchNormalization()(x)
+                        else:
+                            if self.cnn_config.cnn_bn:
+                                x = BatchNormalization()(x)
+                            if not self.cnn_config.cnn_activation_before_bn_do:
+                                x = Activation(self.cnn_config.cnn_activation, name=self.activation + "C" + str(layer_i))(x)
+                            if self.cnn_config.cnn_dropout_rate > 0.01:
+                                x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
 
                     if self.cnn_config.dilation < -1:
                         dil = dil // (-self.cnn_config.dilation)
                     if self.cnn_config.dilation > 1:
                         dil *= self.cnn_config.dilation
+                if self.cnn_config.kernel_2d is not None and (layer_i+1) % (self.cnn_config.cnn_layers // 5) == 0:
+                    if self.cnn_config.cnn_bn:
+                        x = BatchNormalization()(x)
+                    # if not self.cnn_config.cnn_activation_before_bn_do:
+                    x = Activation(self.cnn_config.cnn_activation, name=self.activation + "C" + str(layer_i))(x)
+                    if self.cnn_config.cnn_dense:
+                        pool = MaxPooling2D(pool_size=(1, 4))
+                    else:
+                        pool = MaxPooling2D(pool_size=(1, 2))
+                    x = pool(x)
+                    if self.cnn_config.cnn_dropout_rate > 0.01:
+                        x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
+
+        if self.cnn_config.kernel_2d is not None:
+            print("Before reshape", x.shape, type(x))
+            reshape = Reshape((input_shape[0], -1))
+            x = reshape(x)
+            # x = K.reshape(x, (x.shape[0], x.shape[1], -1))
+            print("After reshape", x.shape)
 
         z = None
         for layer_i in range(0, self.rnn_layers):
@@ -191,41 +241,43 @@ class RNNModel(ModelBuilder):
             x = rnn(z)
             if layer_i < self.rnn_layers - 1:
                 if self.rnn_bn:
-                    x = BatchNormalization()(x)
+                    x = BatchNormalization(name="R_BN_" + str(layer_i))(x)
                 x = Activation(self.rnn_activation, name=self.activation + "R" + str(layer_i))(x)
                 if self.rnn_dropout_rate > 0.01:
-                    x = Dropout(rate=self.rnn_dropout_rate)(x)
+                    x = Dropout(rate=self.rnn_dropout_rate, name="R_DO_" + str(layer_i))(x)
 
         if self.time_distributed_dense:
             if self.activation_before_bn_do:
                 x = Activation(self.activation, name=self.activation)(x)
             if self.do_bn_order:
                 if self.dropout_rate > 0.01:
-                    x = Dropout(rate=self.dropout_rate)(x)
+                    x = Dropout(rate=self.dropout_rate, name="TDD_DO")(x)
                 if not self.activation_before_bn_do:
                     x = Activation(self.activation, name=self.activation)(x)
                 if self.bn:
-                    x = BatchNormalization()(x)
+                    x = BatchNormalization(name="TDD_BN")(x)
             else:
                 if self.bn:
-                    x = BatchNormalization()(x)
+                    x = BatchNormalization(name="TDD_BN")(x)
                 if not self.activation_before_bn_do:
                     x = Activation(self.activation, name=self.activation)(x)
                 if self.dropout_rate > 0.01:
-                    x = Dropout(rate=self.dropout_rate)(x)
+                    x = Dropout(rate=self.dropout_rate, name="TDD_DO")(x)
             x = TimeDistributed(Dense(output_dim))(x)
 
         # Add softmax activation layer
         x = Activation('softmax', name='softmax')(x)
         # Specify the model
+        # print("After activation")
         model = Model(inputs=input_data, outputs=x)
+        # print("After model")
         model.name = self.model_name()
         if self.cnn_config:
             # Cannot pass self.field to lambda function as self gets included in the function and the function
             # becomes not serializable since self is not serializable and then the model does not serialize
-            kernel_size = self.cnn_config.kernel_size
-            conv_border_mode = self.cnn_config.conv_border_mode
-            conv_stride = self.cnn_config.conv_stride
+            kernel_size = self.cnn_config.kernel_2d[0] if self.cnn_config.kernel_2d is not None else self.cnn_config.kernel_size
+            conv_border_mode = "same" if self.cnn_config.kernel_2d is not None else self.cnn_config.conv_border_mode
+            conv_stride = self.cnn_config.conv_stride_2d[0] if self.cnn_config.conv_stride_2d is not None else self.cnn_config.conv_stride
             dilation = abs(self.cnn_config.dilation)
             cnn_layers = self.cnn_config.cnn_layers
 
@@ -245,25 +297,28 @@ class RNNModel(ModelBuilder):
             name += "CNN"
             if self.cnn_config.cnn_dense:
                 name += "_DENSE"
-            name += ["(", self.cnn_config.filters,
-                     " (", self.cnn_config.kernel_size, ",", self.cnn_config.conv_stride, ")"]
+            name += ["(", self.cnn_config.filters]
+            if self.cnn_config.kernel_2d is not None:
+                name += [" (", self.cnn_config.kernel_2d, ",", self.cnn_config.conv_stride_2d, ")"]
+            else:
+                name += [" (", self.cnn_config.kernel_size, ",", self.cnn_config.conv_stride, ")"]
             if self.cnn_config.cnn_activation_before_bn_do and not self.cnn_config.cnn_dense:
                 name += [" ", self.cnn_config.cnn_activation]
 
-            if self.cnn_config.cnn_do_bn_order or self.cnn_config.cnn_dense:
-                if self.cnn_config.cnn_dropout_rate > 0.01:
-                    name += [" DO(", self.cnn_config.cnn_dropout_rate, ")"]
-                if not self.cnn_config.cnn_activation_before_bn_do or self.cnn_config.cnn_dense:
-                    name += [" ", self.cnn_config.cnn_activation]
-                if self.cnn_config.cnn_bn:
-                    name += " BN"
-            else:
+            if not(self.cnn_config.cnn_do_bn_order or self.cnn_config.cnn_dense) or self.cnn_config.kernel_2d is not None:
                 if self.cnn_config.cnn_bn:
                     name += " BN"
                 if not self.cnn_config.cnn_activation_before_bn_do:
                     name += [" ", self.cnn_config.cnn_activation]
                 if self.cnn_config.cnn_dropout_rate > 0.01:
                     name += [" DO(", self.cnn_config.cnn_dropout_rate, ")"]
+            else:
+                if self.cnn_config.cnn_dropout_rate > 0.01:
+                    name += [" DO(", self.cnn_config.cnn_dropout_rate, ")"]
+                if not self.cnn_config.cnn_activation_before_bn_do or self.cnn_config.cnn_dense:
+                    name += [" ", self.cnn_config.cnn_activation]
+                if self.cnn_config.cnn_bn:
+                    name += " BN"
             name += ")"
 
             if self.cnn_config.cnn_layers > 1:
@@ -271,7 +326,6 @@ class RNNModel(ModelBuilder):
                 if self.cnn_config.dilation > 1 or self.cnn_config.dilation < -1:
                     name += [",d=", self.cnn_config.dilation]
             name += " "
-
 
         if self.rnn_layers > 0:
             if self.bd_merge:
