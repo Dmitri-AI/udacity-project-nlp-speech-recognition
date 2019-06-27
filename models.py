@@ -165,7 +165,7 @@ class RNNModel(ModelBuilder):
                         z = x
                     else:
                         if self.cnn_config.kernel_2d is not None:
-                            print(layer_i, x.shape, z.shape)
+                            # print(layer_i, x.shape, z.shape)
                             if layer_i % (self.cnn_config.cnn_layers // 5) == 0 and layer_i > 1:
                             # if layer_i > 1:
                                 z = x
@@ -182,9 +182,9 @@ class RNNModel(ModelBuilder):
                         if self.cnn_config.cnn_dropout_rate > 0.01:
                             x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
                 else:
-                    print("Before x = conv(x)", x.shape)
+                    # print("Before x = conv(x)", x.shape)
                     x = conv(x)
-                    print("After x = conv(x)", x.shape)
+                    # print("After x = conv(x)", x.shape)
                     if (layer_i < self.cnn_config.cnn_layers - 1 or self.rnn_layers > 0) and self.cnn_config.kernel_2d is None:
                         if self.cnn_config.cnn_dropout_rate is None:
                             self.cnn_config.cnn_dropout_rate = self.dropout_rate
@@ -225,11 +225,11 @@ class RNNModel(ModelBuilder):
                         x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
 
         if self.cnn_config.kernel_2d is not None:
-            print("Before reshape", x.shape, type(x))
+            # print("Before reshape", x.shape, type(x))
             reshape = Reshape((input_shape[0], -1))
             x = reshape(x)
             # x = K.reshape(x, (x.shape[0], x.shape[1], -1))
-            print("After reshape", x.shape)
+            # print("After reshape", x.shape)
 
         z = None
         for layer_i in range(0, self.rnn_layers):
