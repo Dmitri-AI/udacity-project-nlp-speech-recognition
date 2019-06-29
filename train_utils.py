@@ -107,7 +107,7 @@ class MetricsLogger(Callback):
 
             if self.n_epochs:
                 step = 1
-                while self.n_epochs // step >= 10:
+                while self.n_epochs // step > 10:
                     if step == 1:
                         step = 2
                     elif step == 2:
@@ -235,7 +235,7 @@ from keras import backend as K
 from utils import int_sequence_to_text
 
 def load_model(data_gen: AudioGenerator, model_builder: ModelBuilder):
-    model = model_builder.model(input_dim=data_gen.input_dim, output_dim=29)
+    model = model_builder.model(input_shape=(None, data_gen.input_dim), output_dim=29)
     model.load_weights('results/' + ("Spec " if data_gen.spectrogram else "MFCC ") + model.name + '.h5')
     return model
 

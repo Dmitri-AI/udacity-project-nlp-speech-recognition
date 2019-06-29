@@ -1,19 +1,18 @@
-from enum import Enum
 from abc import abstractmethod
+from enum import Enum
 from typing import Optional
-from keras import backend as K
 
 from keras.layers import (BatchNormalization, Conv1D, Conv2D, Dense, Input,
                           TimeDistributed, Activation, Bidirectional,
                           SimpleRNN,  # GRU, LSTM,
                           CuDNNGRU, CuDNNLSTM, Dropout, concatenate,
-                          MaxPooling1D, MaxPooling2D, AveragePooling1D, AveragePooling2D, Reshape)
+                          MaxPooling2D, Reshape)
 from keras.models import Model
 
 
 class ModelBuilder(object):
     @abstractmethod
-    def model(self, input_dim: int, output_dim: int) -> Model:
+    def model(self, input_shape, output_dim: int) -> Model:
         pass
 
 
@@ -149,9 +148,9 @@ class RNNModel(ModelBuilder):
                 if not self.cnn_config.cnn_activation_before_bn_do or self.cnn_config.cnn_dense:
                     in_layer_activation = None
                 if self.cnn_config.kernel_2d is not None:
-                    conv = Conv2D(self.cnn_config.filters, self.cnn_config.kernel_2d, strides=self.cnn_config.conv_stride_2d,
+                    conv = Conv2D(self.cnn_config.filters, self.cnn_config.kernel_2d,
+                                  strides=self.cnn_config.conv_stride_2d,
                                   padding="same",
-                                  # padding=self.cnn_config.conv_border_mode, #use_bias=False, kernel_initializer="zeros",
                                   activation=in_layer_activation)
                 else:
                     conv = Conv1D(self.cnn_config.filters, self.cnn_config.kernel_size,
@@ -167,14 +166,14 @@ class RNNModel(ModelBuilder):
                         if self.cnn_config.kernel_2d is not None:
                             # print(layer_i, x.shape, z.shape)
                             if layer_i % (self.cnn_config.cnn_layers // 5) == 0 and layer_i > 1:
-                            # if layer_i > 1:
                                 z = x
                             else:
                                 z = concatenate([z, x], axis=-1)
                         else:
                             z = concatenate([z, x], axis=-1)
                     x = conv(z)
-                    if (layer_i < self.cnn_config.cnn_layers - 1 or self.rnn_layers > 0) and self.cnn_config.kernel_2d is None:
+                    if (
+                            layer_i < self.cnn_config.cnn_layers - 1 or self.rnn_layers > 0) and self.cnn_config.kernel_2d is None:
                         if self.cnn_config.cnn_bn:
                             x = BatchNormalization()(x)
                         if not self.cnn_config.cnn_activation_before_bn_do:
@@ -185,7 +184,8 @@ class RNNModel(ModelBuilder):
                     # print("Before x = conv(x)", x.shape)
                     x = conv(x)
                     # print("After x = conv(x)", x.shape)
-                    if (layer_i < self.cnn_config.cnn_layers - 1 or self.rnn_layers > 0) and self.cnn_config.kernel_2d is None:
+                    if (
+                            layer_i < self.cnn_config.cnn_layers - 1 or self.rnn_layers > 0) and self.cnn_config.kernel_2d is None:
                         if self.cnn_config.cnn_dropout_rate is None:
                             self.cnn_config.cnn_dropout_rate = self.dropout_rate
 
@@ -193,14 +193,16 @@ class RNNModel(ModelBuilder):
                             if self.cnn_config.cnn_dropout_rate > 0.01:
                                 x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
                             if not self.cnn_config.cnn_activation_before_bn_do:
-                                x = Activation(self.cnn_config.cnn_activation, name=self.activation + "C" + str(layer_i))(x)
+                                x = Activation(self.cnn_config.cnn_activation,
+                                               name=self.activation + "C" + str(layer_i))(x)
                             if self.cnn_config.cnn_bn:
                                 x = BatchNormalization()(x)
                         else:
                             if self.cnn_config.cnn_bn:
                                 x = BatchNormalization()(x)
                             if not self.cnn_config.cnn_activation_before_bn_do:
-                                x = Activation(self.cnn_config.cnn_activation, name=self.activation + "C" + str(layer_i))(x)
+                                x = Activation(self.cnn_config.cnn_activation,
+                                               name=self.activation + "C" + str(layer_i))(x)
                             if self.cnn_config.cnn_dropout_rate > 0.01:
                                 x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
 
@@ -209,7 +211,7 @@ class RNNModel(ModelBuilder):
                     if self.cnn_config.dilation > 1:
                         dil *= self.cnn_config.dilation
                 if self.cnn_config.kernel_2d is not None:
-                # if self.cnn_config.kernel_2d is not None and (layer_i+1) % (self.cnn_config.cnn_layers // 5) == 0:
+                    # if self.cnn_config.kernel_2d is not None and (layer_i+1) % (self.cnn_config.cnn_layers // 5) == 0:
                     if self.cnn_config.cnn_bn:
                         x = BatchNormalization()(x)
                     # if not self.cnn_config.cnn_activation_before_bn_do:
@@ -217,8 +219,8 @@ class RNNModel(ModelBuilder):
                     if not self.cnn_config.cnn_dense:
                         pool = MaxPooling2D(pool_size=(1, 2))
                         x = pool(x)
-                    elif (layer_i+1) % (self.cnn_config.cnn_layers // 5) == 0:
-                    # elif layer_i == self.cnn_config.cnn_layers - 1:
+                    elif (layer_i + 1) % (self.cnn_config.cnn_layers // 5) == 0:
+                        # elif layer_i == self.cnn_config.cnn_layers - 1:
                         pool = MaxPooling2D(pool_size=(1, 2))
                         x = pool(x)
                     if self.cnn_config.cnn_dropout_rate > 0.01:
@@ -278,9 +280,11 @@ class RNNModel(ModelBuilder):
         if self.cnn_config:
             # Cannot pass self.field to lambda function as self gets included in the function and the function
             # becomes not serializable since self is not serializable and then the model does not serialize
-            kernel_size = self.cnn_config.kernel_2d[0] if self.cnn_config.kernel_2d is not None else self.cnn_config.kernel_size
+            kernel_size = self.cnn_config.kernel_2d[
+                0] if self.cnn_config.kernel_2d is not None else self.cnn_config.kernel_size
             conv_border_mode = "same" if self.cnn_config.kernel_2d is not None else self.cnn_config.conv_border_mode
-            conv_stride = self.cnn_config.conv_stride_2d[0] if self.cnn_config.conv_stride_2d is not None else self.cnn_config.conv_stride
+            conv_stride = self.cnn_config.conv_stride_2d[
+                0] if self.cnn_config.conv_stride_2d is not None else self.cnn_config.conv_stride
             dilation = abs(self.cnn_config.dilation)
             cnn_layers = self.cnn_config.cnn_layers
 
@@ -308,7 +312,8 @@ class RNNModel(ModelBuilder):
             if self.cnn_config.cnn_activation_before_bn_do and not self.cnn_config.cnn_dense:
                 name += [" ", self.cnn_config.cnn_activation]
 
-            if not(self.cnn_config.cnn_do_bn_order or self.cnn_config.cnn_dense) or self.cnn_config.kernel_2d is not None:
+            if not (
+                    self.cnn_config.cnn_do_bn_order or self.cnn_config.cnn_dense) or self.cnn_config.kernel_2d is not None:
                 if self.cnn_config.cnn_bn:
                     name += " BN"
                 if not self.cnn_config.cnn_activation_before_bn_do:
