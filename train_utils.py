@@ -291,7 +291,7 @@ def get_predictions(data_gen: AudioGenerator,
 from glob import glob
 
 
-def plot_comparison(pickles=None, min_epoch=1, max_epoch=None, min_loss=50, max_loss=150):
+def plot_comparison(pickles=None, min_epoch=1, max_epoch=None, min_loss=90, max_loss=120):
     # obtain the paths for the saved model history
     # extract the name and loss history for each model
 
