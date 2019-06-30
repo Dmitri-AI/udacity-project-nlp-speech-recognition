@@ -242,7 +242,7 @@ def load_model(data_gen: AudioGenerator, model_builder: ModelBuilder):
 
 def get_predictions(data_gen: AudioGenerator,
                     model,
-                    partition, index):
+                    partition, index, omit_true=False, print_line=True):
     """ Print a model's decoded predictions
     Params:
         index (int): The example you would like to visualize
@@ -256,6 +256,8 @@ def get_predictions(data_gen: AudioGenerator,
     # data_gen.load_validation_data()
 
     # obtain the true transcription and the audio features
+    if data_gen is None:
+        print("Data Generator is None!")
     if partition == 'validation':
         transcription = data_gen.valid_texts[index]
         audio_path = data_gen.valid_audio_paths[index]
@@ -274,12 +276,13 @@ def get_predictions(data_gen: AudioGenerator,
         prediction, output_length)[0][0]) + 1).flatten().tolist()
 
     # play the audio file, and display the true and predicted transcriptions
-    print('-' * 80)
     # Audio(audio_path)
-    print('True transcription:\n' + '\n' + transcription)
-    print('-' * 80)
-    print('Predicted transcription:\n' + '\n' + ''.join(int_sequence_to_text(pred_ints)))
-    print('-' * 80)
+    input_type = "SPEC" if data_gen.spectrogram else "MFCC"
+    if not omit_true:
+        print('TRUE:      ' + transcription)
+    print('PRED ' + input_type + ': ' + ''.join(int_sequence_to_text(pred_ints)))
+    if print_line:
+        print('-' * 82)
     return audio_path
 
 

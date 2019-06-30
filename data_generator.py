@@ -22,7 +22,7 @@ class AudioGenerator:
                  # desc_file=None,
                  minibatch_size=20, spectrogram=True, raw=False, max_duration=10.0,
                  max_length=None,
-                 sort_by_duration=False):
+                 sort_by_duration=False, shuffle_data=True):
         """
         Params:
             step (int): Step size in milliseconds between windows (for spectrogram ONLY)
@@ -54,6 +54,7 @@ class AudioGenerator:
         self.raw = raw
         self.max_length = max_length
         self.sort_by_duration = sort_by_duration
+        self.shuffle_data = shuffle_data
         self.input_dim = 1 if raw else (161 if spectrogram else mfcc_dim)
 
     def get_batch(self, partition):
@@ -123,6 +124,8 @@ class AudioGenerator:
     def shuffle_data_by_partition(self, partition):
         """ Shuffle the training or validation data
         """
+        if not self.shuffle_data:
+            return
         if partition == 'train':
             self.train_audio_paths, self.train_durations, self.train_texts = shuffle_data(
                 self.train_audio_paths, self.train_durations, self.train_texts)
@@ -277,10 +280,11 @@ class AudioGeneratorCached(AudioGenerator):
                  spectrogram=True, raw=False,
                  max_duration=10.0,
                  max_length=None,
-                 sort_by_duration=True):
+                 sort_by_duration=True,
+                 shuffle_data=True):
         super().__init__(step, window, max_freq, mfcc_dim, minibatch_size, # desc_file,
                          spectrogram, raw,
-                         max_duration, max_length, sort_by_duration)
+                         max_duration, max_length, sort_by_duration, shuffle_data)
         self.file_to_feature = dict()
 
     def featurize(self, audio_clip):
