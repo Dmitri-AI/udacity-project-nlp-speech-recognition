@@ -132,10 +132,11 @@ class RNNModel(ModelBuilder):
         # print("input shape", input_shape)
         x = input_data
 
-        if self.cnn_config.kernel_2d is not None:
-            reshape_up = Reshape((*input_shape, 1))
-            x = reshape_up(x)
-            # x = K.expand_dims(input_data, -1)
+        if self.cnn_config:
+            if self.cnn_config.kernel_2d is not None:
+                reshape_up = Reshape((*input_shape, 1))
+                x = reshape_up(x)
+                # x = K.expand_dims(input_data, -1)
 
         z = None
         if self.cnn_config:
@@ -226,7 +227,7 @@ class RNNModel(ModelBuilder):
                     if self.cnn_config.cnn_dropout_rate > 0.01:
                         x = Dropout(rate=self.cnn_config.cnn_dropout_rate)(x)
 
-        if self.cnn_config.kernel_2d is not None:
+        if self.cnn_config and self.cnn_config.kernel_2d is not None:
             # print("Before reshape", x.shape, type(x))
             reshape = Reshape((input_shape[0], -1))
             x = reshape(x)
